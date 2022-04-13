@@ -5,6 +5,7 @@ import cv2
 import random
 import math                      # 파이썬에서 openCV를 사용하기 위한 모듈, 난수 생성 모듈, 수학적 계산 관련 모듈
 import time
+import pandas as pd             # 데이터 프레임 처리 모듈
 import sys  # 파이썬 인터프리터가 제공하는 변수와 함수를 직접 제어할 수 있게 해주는 모듈
 import os
 
@@ -13,9 +14,10 @@ Width = 640                                 # 영상 제원 : 640 x 480 / 30FPS
 Height = 480
 Offset = 380                                # 이번 프로젝트에서 주어진 Offset 위치 약간 변경함
 Gap = 40
+line_temp = []                         # left_pos, right_pos 저장 배열
 
 # 실행을 위해 추가한 코드
-cap = cv2.VideoCapture("./subProject.avi")
+cap = cv2.VideoCapture("./Line_detection/subProject.avi")
 #######
 
 # canny edge img, lines를 인자로 받아 cv2.line으로 직선을 그려주는 함수
@@ -140,7 +142,7 @@ def get_line_pos(img, lines, left=False, right=False):      # 좌,우 line의 �
         x2 = ((Height/2) - b) / float(m)
 
         cv2.line(img, (int(x1), Height),
-                 (int(x2), int(Height/2)), (255, 0, 0), 3)
+                 (int(x2), int(Height/2)), (255, 0, 0), 1)
 
     return img, int(pos)
 
@@ -178,6 +180,7 @@ def process_image(frame):                           # 입력받은 프레임당�
     # divide left, right lines
     if all_lines is None:
         return 0, 640
+
     left_lines, right_lines = divide_left_right(
         all_lines)              # 허프만으로 검출된 모든 line를 필터링 및 좌우로 분류
 
@@ -195,36 +198,107 @@ def process_image(frame):                           # 입력받은 프레임당�
     # draw rectangle
     frame = draw_rectangle(frame, lpos, rpos, offset=Offset)
 
+    # TODO4 함수 위치
+    frame = print_corr(frame)
+
     # show image
-    cv2.imshow('calibration', frame)
+    # cv2.imshow('calibration', frame)
 
     return lpos, rpos
+    
+def print_corr(frame):
+    global cap
+    text="Video Frame num : %d" % (cap.get(cv2.CAP_PROP_POS_FRAMES)/30)
+    org=(400,50)
+    cv2.putText(frame,text,org,cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255))
+    cv2.imshow('calibration', frame)
+    cv2.setMouseCallback('calibration', onMouse)
 
+    return frame
+
+def onMouse(event, x, y, flags, param) :
+    if event == cv2.EVENT_MOUSEMOVE:
+        print('현재 마우스 좌표 : ', x, y)
+
+def print_answer_rate():
+    global line_temp
+    target=pd.read_csv('./Line_detection/target_final.csv',names=['lposl','lposr','rposl','rposr'], header=None)
+
+    check_answerl = []
+    check_answerr = []
+
+    for i in target.index:
+        if abs(target["lposl"][i]-target["lposr"][i])<=2:
+            check_answerl.append(1)
+        elif target["lposl"][i]<=line_temp[i][0]  <=target["lposr"][i]:
+            check_answerl.append(1)
+        else:
+            check_answerl.append(0)
+
+        if abs(target["rposl"][i]-target["rposr"][i])<=2:
+            check_answerr.append(1)
+        elif target["rposl"][i]<=line_temp[i][1]  <=target["rposr"][i]:
+            check_answerr.append(1)
+        else:
+            check_answerr.append(0)
+        
+    print("left correct answer rate : ", check_answerl.count(1)/len(check_answerl))
+    print("right correct answer rate : ", check_answerr.count(1)/len(check_answerr))
+
+    
+
+    target=pd.concat([target,pd.DataFrame(line_temp)],axis=1)
+    target=pd.concat([target,pd.DataFrame(check_answerl)],axis=1)
+    target=pd.concat([target,pd.DataFrame(check_answerr)],axis=1)
+    target.columns=["answer_lpos", "answer_rpos", "target_lposl", "target_lposr", "target_rposl","target_rposr","original_lcorrect","original_rcorrect"] 
+    target.to_csv('./Line_detection/check_correct1.csv', index=False)
 
 def start():
     global cap
     global Width, Height
+    global line_temp
+    frame_idx=0
 
     while cap.isOpened():                                               # 실행할 수 있도록 수정
-
-        _, frame = cap.read()
-
-        lpos, rpos = process_image(frame)
-        # TODO 1 : lpos와 rpos를 30 frame당 하나의 row로 저장하는 함수
-
-        # TODO 2 : 차선이 끊긴 구간은 위 아래의 차선을 판별하려 가상의 위치를 찍어야 하나? 맞다면 해당하는 함수
-
-        # TODO 3 : 밝은 곳과 어두운 곳에 가변적으로 threshold 값이 바뀌어 적용되는 부분. 현재 기존 함수 내에 작성해야 할 것 같고 생각보다 허프만이 강력함
-
-        # TODO 4 : 정답 csv 파일 만들기. 아마 직접 위치를 찾아야 하는 노가다일 수도 있는데 좋은 결과를 위해서는 필요할 듯 ?
-        # python cv2에서 마우스 오버레이를 하면 좌표 x,y가 출력되는 기능을 찾는다?
-        # 프레임도 표기해주는 방법 / 30프레임당 한장만 뽑아서 그거에 대한 답안을 찾아도 되지않을까 ?
-
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        run, frame = cap.read()
+        
+        if not run:
+            print("end")
             break
+        
+        frame_idx+=1
+        if frame_idx==30:
+            lpos, rpos = process_image(frame)
+            line_temp.append([lpos,rpos])
+            # TODO 2 : 차선이 끊긴 구간은 위 아래의 차선을 판별하려 가상의 위치를 찍어야 하나? 맞다면 해당하는 함수
+            
+            # TODO 3 : 밝은 곳과 어두운 곳에 가변적으로 threshold 값이 바뀌어 적용되는 부분. 현재 기존 함수 내에 작성해야 할 것 같고 생각보다 허프만이 강력함
+            
+            frame_idx=0
 
-        time.sleep(0.01)            # 천천히 출력하기 위해 추가 / 여기가 지연부분
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
 
+            # key = cv2.waitKey(1) & 0xFF         # 키보드 입력 전 무한 대기
+            # if key == ord('n'):
+            #     continue
+            # elif key == ord('q'):
+            #     break
+            # elif key == ord('r'):
+            #     print(len(target_temp))
+
+            
+            #time.sleep(0.01)            # 천천히 출력하기 위해 추가 / 여기가 지연부분
+
+    #line = pd.DataFrame(line_temp)
+    #line.to_csv('./Line_detection/line.csv',header=False, index=False)
+    
+
+
+
+    print_answer_rate()
+    cap.release()
+    cv2.destroyAllWindows()
 
 if __name__ == '__main__':          # 파이썬의 main 함수
     start()
