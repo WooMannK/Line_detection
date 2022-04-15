@@ -8,6 +8,7 @@ import time
 import pandas as pd             # 데이터 프레임 처리 모듈
 import sys  # 파이썬 인터프리터가 제공하는 변수와 함수를 직접 제어할 수 있게 해주는 모듈
 import os
+from bayes_opt import BayesianOptimization
 
 # 선언 및 초기화
 Width = 640                                 # 영상 제원 : 640 x 480 / 30FPS
@@ -58,7 +59,7 @@ def divide_left_right(lines):
 
     # 해당 기울기 사이에 있어야 line이라 판단하는 임계값
     low_slope_threshold = 0
-    high_slope_threshold = 10
+    high_slope_threshold = 9
 
     # calculate slope & filtering with threshold
     slopes = []                                         # 임계값에 의해 필터링된 기울기와 line 값
@@ -163,9 +164,9 @@ def process_image(frame):                           # 입력받은 프레임당�
 
     # canny edge
     # 다른 엣지와 가까운 곳에서 엣지인지 아닌지를 판단하는 임계값
-    low_threshold = 60
+    low_threshold = 70
     # 사람이 생각하는 직관적인 임계값.
-    high_threshold = 70
+    high_threshold = 163
     # 만약 해당 파라미터 조정이 필요하다만 high를 먼저, low를 나중에
     edge_img = cv2.Canny(np.uint8(blur_gray), low_threshold, high_threshold)
 
@@ -190,13 +191,13 @@ def process_image(frame):                           # 입력받은 프레임당�
     frame, rpos = get_line_pos(frame, right_lines, right=True)
 
     # draw lines
-    frame = draw_lines(frame, left_lines)
-    frame = draw_lines(frame, right_lines)
-    frame = cv2.line(frame, (230, 235), (410, 235),
-                     (255, 255, 255), 2)   # 정면 흰색 선
+    #frame = draw_lines(frame, left_lines)
+    #frame = draw_lines(frame, right_lines)
+    #frame = cv2.line(frame, (230, 235), (410, 235),
+    #                 (255, 255, 255), 2)   # 정면 흰색 선
 
     # draw rectangle
-    frame = draw_rectangle(frame, lpos, rpos, offset=Offset)
+    #frame = draw_rectangle(frame, lpos, rpos, offset=Offset)
 
     # TODO4 함수 위치
     frame = print_corr(frame)
@@ -208,10 +209,10 @@ def process_image(frame):                           # 입력받은 프레임당�
     
 def print_corr(frame):
     global cap
-    text="Video Frame num : %d" % (cap.get(cv2.CAP_PROP_POS_FRAMES)/30)
+    text="Video Frame num : %d" % (cap.get(cv2.CAP_PROP_POS_FRAMES))
     org=(400,50)
     cv2.putText(frame,text,org,cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255))
-    cv2.imshow('calibration', frame)
+    cv2.imshonw('calibration', frame)
     cv2.setMouseCallback('calibration', onMouse)
 
     return frame
@@ -222,36 +223,54 @@ def onMouse(event, x, y, flags, param) :
 
 def print_answer_rate():
     global line_temp
-    target=pd.read_csv('./Line_detection/target_final.csv',names=['lposl','lposr','rposl','rposr'], header=None)
+    #target=pd.read_csv('./Line_detection/target_final.csv',names=['lposl','lposr','rposl','rposr'], header=None)
+    target=pd.read_csv('./Line_detection/pos.csv',encoding= 'utf-8')
 
     check_answerl = []
     check_answerr = []
 
+    # for i in target.index:
+    #     if abs(target["lposl"][i]-target["lposr"][i])<=2:
+    #         check_answerl.append(1)
+    #     elif target["lposl"][i]<=line_temp[i][0]  <=target["lposr"][i]:
+    #         check_answerl.append(1)
+    #     else:
+    #         check_answerl.append(0)
+
+    #     if abs(target["rposl"][i]-target["rposr"][i])<=2:
+    #         check_answerr.append(1)
+    #     elif target["rposl"][i]<=line_temp[i][1]  <=target["rposr"][i]:
+    #         check_answerr.append(1)
+    #     else:
+    #         check_answerr.append(0)
     for i in target.index:
-        if abs(target["lposl"][i]-target["lposr"][i])<=2:
+        if abs(target["new lposl"][i]-target["new lposr"][i])<=2:
             check_answerl.append(1)
-        elif target["lposl"][i]<=line_temp[i][0]  <=target["lposr"][i]:
+        elif target["new lposl"][i]<=line_temp[i][0]  <=target["new lposr"][i]:
             check_answerl.append(1)
         else:
             check_answerl.append(0)
 
-        if abs(target["rposl"][i]-target["rposr"][i])<=2:
+        if abs(target["new rposl"][i]-target["new rposr"][i])<=2:
             check_answerr.append(1)
-        elif target["rposl"][i]<=line_temp[i][1]  <=target["rposr"][i]:
+        elif target["new rposl"][i]<=line_temp[i][1]  <=target["new rposr"][i]:
             check_answerr.append(1)
         else:
-            check_answerr.append(0)
-        
-    print("left correct answer rate : ", check_answerl.count(1)/len(check_answerl))
-    print("right correct answer rate : ", check_answerr.count(1)/len(check_answerr))
-
+            check_answerr.append(0)    
     
 
-    target=pd.concat([target,pd.DataFrame(line_temp)],axis=1)
-    target=pd.concat([target,pd.DataFrame(check_answerl)],axis=1)
-    target=pd.concat([target,pd.DataFrame(check_answerr)],axis=1)
-    target.columns=["answer_lpos", "answer_rpos", "target_lposl", "target_lposr", "target_rposl","target_rposr","original_lcorrect","original_rcorrect"] 
-    target.to_csv('./Line_detection/check_correct1.csv', index=False)
+
+
+    print("left correct answer rate : ", check_answerl.count(1)/len(check_answerl))
+    print("right correct answer rate : ", check_answerr.count(1)/len(check_answerr))
+    print("correct answer rate : {:2f}".format(((check_answerl.count(1)/len(check_answerl))+(check_answerr.count(1)/len(check_answerr)))/2))
+    
+
+    # target=pd.concat([target,pd.DataFrame(line_temp)],axis=1)
+    # target=pd.concat([target,pd.DataFrame(check_answerl)],axis=1)
+    # target=pd.concat([target,pd.DataFrame(check_answerr)],axis=1)
+    # target.columns=["answer_lpos", "answer_rpos", "target_lposl", "target_lposr", "target_rposl","target_rposr","original_lcorrect","original_rcorrect"] 
+    # target.to_csv('./Line_detection/check_correct1.csv', index=False)
 
 def start():
     global cap
@@ -286,7 +305,6 @@ def start():
             #     break
             # elif key == ord('r'):
             #     print(len(target_temp))
-
             
             #time.sleep(0.01)            # 천천히 출력하기 위해 추가 / 여기가 지연부분
 
